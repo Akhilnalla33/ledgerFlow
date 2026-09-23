@@ -1,0 +1,175 @@
+### LedgerFlow — REST Client collection (VS Code REST Client / IntelliJ HTTP Client compatible)
+### Run `docker compose up`, then get a token, then run the requests below top to bottom.
+
+@keycloakUrl = http://localhost:8180
+@accountUrl = http://localhost:8081
+@settlementUrl = http://localhost:8082
+@queryUrl = http://localhost:8083
+
+### 1. Get an access token (Keycloak, resource-owner password grant, demo realm/user)
+# @name login
+POST {{keycloakUrl}}/realms/ledgerflow/protocol/openid-connect/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=password&client_id=ledgerflow-demo&username=demo&password=demo
+
+###
+@token = {{login.response.body.access_token}}
+
+### 2. Create a payer account
+# @name createPayer
+POST {{accountUrl}}/api/v1/accounts
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "ownerId": "alice",
+  "currency": "USD"
+}
+
+###
+@payerId = {{createPayer.response.body.id}}
+
+### 3. Create a payee account
+# @name createPayee
+POST {{accountUrl}}/api/v1/accounts
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "ownerId": "bob",
+  "currency": "USD"
+}
+
+###
+@payeeId = {{createPayee.response.body.id}}
+
+### 4. Create a funding account and seed the payer (demonstrates Idempotency-Key)
+# @name createFunding
+POST {{accountUrl}}/api/v1/accounts
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "ownerId": "system-funding",
+  "currency": "USD"
+}
+
+###
+@fundingId = {{createFunding.response.body.id}}
+
+### 5. Seed the payer with 200.00 (Idempotency-Key required on every mutating call)
+POST {{accountUrl}}/api/v1/transfers
+Authorization: Bearer {{token}}
+Content-Type: application/json
+Idempotency-Key: seed-demo-001
+
+{
+  "fromAccountId": "{{fundingId}}",
+  "toAccountId": "{{payerId}}",
+  "amount": "200.00",
+  "currency": "USD",
+  "reason": "seed"
+}
+
+### 6. Replay the exact same request with the SAME Idempotency-Key: applies exactly once,
+###    returns the original transfer, does NOT move money a second time.
+POST {{accountUrl}}/api/v1/transfers
+Authorization: Bearer {{token}}
+Content-Type: application/json
+Idempotency-Key: seed-demo-001
+
+{
+  "fromAccountId": "{{fundingId}}",
+  "toAccountId": "{{payerId}}",
+  "amount": "200.00",
+  "currency": "USD",
+  "reason": "seed"
+}
+
+### 7. Reusing the SAME key with a DIFFERENT body: rejected with 409 Conflict
+POST {{accountUrl}}/api/v1/transfers
+Authorization: Bearer {{token}}
+Content-Type: application/json
+Idempotency-Key: seed-demo-001
+
+{
+  "fromAccountId": "{{fundingId}}",
+  "toAccountId": "{{payerId}}",
+  "amount": "999.00",
+  "currency": "USD",
+  "reason": "seed"
+}
+
+### 8. A normal transfer, payer -> payee
+POST {{accountUrl}}/api/v1/transfers
+Authorization: Bearer {{token}}
+Content-Type: application/json
+Idempotency-Key: transfer-demo-001
+
+{
+  "fromAccountId": "{{payerId}}",
+  "toAccountId": "{{payeeId}}",
+  "amount": "25.00",
+  "currency": "USD",
+  "reason": "lunch"
+}
+
+### 9. Missing Idempotency-Key header: rejected with 400
+POST {{accountUrl}}/api/v1/transfers
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "fromAccountId": "{{payerId}}",
+  "toAccountId": "{{payeeId}}",
+  "amount": "5.00",
+  "currency": "USD",
+  "reason": "no key"
+}
+
+### 10. Get account balance
+GET {{accountUrl}}/api/v1/accounts/{{payerId}}
+Authorization: Bearer {{token}}
+
+### 11. Get ledger entries for the payer
+GET {{accountUrl}}/api/v1/accounts/{{payerId}}/ledger-entries
+Authorization: Bearer {{token}}
+
+### 12. Reconciliation: cached balance vs. ledger-derived balance
+GET {{accountUrl}}/api/v1/accounts/{{payerId}}/reconcile
+Authorization: Bearer {{token}}
+
+### 13. Create+execute a 2-way settlement (bill split) via settlement-service
+# @name settlement
+POST {{settlementUrl}}/api/v1/settlements
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "payerAccountId": "{{payerId}}",
+  "currency": "USD",
+  "reason": "dinner split",
+  "payees": [
+    { "payeeAccountId": "{{payeeId}}", "amount": "10.00" }
+  ]
+}
+
+###
+@settlementId = {{settlement.response.body.id}}
+
+### 14. Get settlement status
+GET {{settlementUrl}}/api/v1/settlements/{{settlementId}}
+Authorization: Bearer {{token}}
+
+### 15. Read-model: balance projection (eventually consistent via Kafka)
+GET {{queryUrl}}/api/v1/accounts/{{payerId}}/balance
+Authorization: Bearer {{token}}
+
+### 16. Read-model: statement history
+GET {{queryUrl}}/api/v1/accounts/{{payerId}}/statement
+Authorization: Bearer {{token}}
+
+### 17. Read-model: settlement audit trail
+GET {{queryUrl}}/api/v1/settlements/{{settlementId}}/audit-trail
+Authorization: Bearer {{token}}
