@@ -1,0 +1,24 @@
+# Test-only configuration. Production (application.yml) uses Flyway exclusively against
+# PostgreSQL with ddl-auto: none. Tests below the *IT.java / Testcontainers layer run against
+# H2 with ddl-auto so the concurrency and idempotency test suites are fast and don't require a
+# local Docker daemon (see README's "Environment limitations" section for why).
+spring:
+  datasource:
+    url: jdbc:h2:mem:account_test;MODE=PostgreSQL;DB_CLOSE_DELAY=-1
+    username: sa
+    password: sa
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    properties:
+      hibernate.jdbc.time_zone: UTC
+  flyway:
+    enabled: false
+  kafka:
+    bootstrap-servers: ${spring.embedded.kafka.brokers:localhost:9092}
+
+ledgerflow:
+  outbox:
+    # Effectively disabled for these tests: no real Kafka broker is running, and the outbox
+    # rows themselves (not delivery) are what the tests below assert on.
+    poll-interval-ms: 3600000

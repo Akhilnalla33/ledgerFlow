@@ -1,0 +1,76 @@
+server:
+  port: 8082
+
+spring:
+  application:
+    name: settlement-service
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:settlement_db}
+    username: ${DB_USER:ledgerflow}
+    password: ${DB_PASSWORD:ledgerflow}
+  jpa:
+    hibernate:
+      ddl-auto: none
+    open-in-view: false
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      acks: all
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${OAUTH2_ISSUER_URI:http://localhost:8180/realms/ledgerflow}
+
+ledgerflow:
+  account-service:
+    base-url: ${ACCOUNT_SERVICE_BASE_URL:http://localhost:8081}
+  outbox:
+    poll-interval-ms: 500
+
+resilience4j:
+  retry:
+    instances:
+      outboxPublisher:
+        max-attempts: 3
+        wait-duration: 200ms
+      settlementClient:
+        max-attempts: 3
+        wait-duration: 200ms
+        retry-exceptions:
+          - com.ledgerflow.settlement.client.AccountServiceClient$AccountServiceCallException
+  circuitbreaker:
+    instances:
+      settlementClient:
+        sliding-window-size: 20
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 10s
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      probes:
+        enabled: true
+  tracing:
+    sampling:
+      probability: 1.0
+  otlp:
+    tracing:
+      endpoint: ${OTLP_ENDPOINT:http://localhost:4318/v1/traces}
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+
+logging:
+  pattern:
+    level: "%5p [${spring.application.name},%X{correlationId}]"
