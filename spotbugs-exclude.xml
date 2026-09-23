@@ -1,0 +1,27 @@
+<FindBugsFilter>
+  <Match>
+    <Class name="~.*\.dto\..*"/>
+    <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
+  </Match>
+  <Match>
+    <Class name="~.*\.domain\..*"/>
+    <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
+  </Match>
+  <Match>
+    <!-- Every Spring bean below stores constructor-injected collaborators (repositories,
+         other services, KafkaTemplate, ObjectMapper) in final fields. That is the standard
+         constructor-injection pattern the whole codebase relies on; SpotBugs' EI_EXPOSE_REP2
+         treats it as "exposing a mutable internal", which is a false positive for
+         singleton-scoped, container-managed collaborators rather than caller-supplied
+         mutable state. -->
+    <Bug pattern="EI_EXPOSE_REP2"/>
+    <Method name="&lt;init&gt;"/>
+  </Match>
+  <Match>
+    <Class name="~.*\.web\.error\.ErrorResponse"/>
+    <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
+  </Match>
+  <Match>
+    <Class name="~.*Application"/>
+  </Match>
+</FindBugsFilter>
